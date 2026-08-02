@@ -17,15 +17,23 @@ GLOBAL_RANDOM_POOLS = [
 ]
 
 YDL_OPTS = {
-    'format': 'bestaudio/best',
-    'quiet': True,
-    'no_warnings': True,
-    'skip_download': True,
-    'cookiefile': 'cookies.txt',
-    'socket_timeout': 15,
-    'http_headers': {
-        'User-Agent': 'Mozilla/5.0'
-    }
+    "format": "bestaudio/best",
+    "quiet": True,
+    "no_warnings": True,
+    "skip_download": True,
+    "socket_timeout": 20,
+
+    "extractor_retries": 3,
+    "retries": 3,
+
+    "http_headers": {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/138.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+    },
 }
 
 SEARCH_OPTS = {**YDL_OPTS, 'extract_flat': 'in_playlist', 'default_search': 'ytsearch8'}
@@ -40,73 +48,62 @@ def fetch_search_flat(query):
         print(f"Search error: {e}")
         return None
 
+CLIENTS = [
+    "ios",
+    "android",
+    "web",
+    "tv",
+    "mweb"
+]
+
 def resolve_stream(video_id):
-    try:
-        print("=" * 60)
-        print("Resolving:", video_id)
+    for client in CLIENTS:
+        try:
+            print(f"Trying client: {client}")
 
-        with YoutubeDL(STREAM_OPTS) as ydl:
-            info = ydl.extract_info(
-                f"https://www.youtube.com/watch?v={video_id}",
-                download=False
-            )
+            opts = {
+                **STREAM_OPTS,
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": [client]
+                    }
+                }
+            }
 
-        print("Title:", info.get("title"))
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(
+                    f"https://www.youtube.com/watch?v={video_id}",
+                    download=False
+                )
 
-        formats = info.get("formats", [])
-        print("Formats:", len(formats))
+            formats = info.get("formats", [])
 
-        print("\n=== ALL FORMATS ===")
-        for f in formats:
-            print(
-                f"ID={f.get('format_id')} | "
-                f"EXT={f.get('ext')} | "
-                f"VCODEC={f.get('vcodec')} | "
-                f"ACODEC={f.get('acodec')} | "
-                f"ABR={f.get('abr')} | "
-                f"HAS_URL={bool(f.get('url'))}"
-            )
+            audio = [
+                f for f in formats
+                if f.get("vcodec") == "none"
+                and f.get("acodec") not in (None, "none")
+                and f.get("url")
+            ]
 
-        # Prioritas 1: Audio Only
-        audio = [
-            f for f in formats
-            if f.get("vcodec") == "none"
-            and f.get("acodec") not in (None, "none")
-            and f.get("url")
-        ]
+            if audio:
+                audio.sort(key=lambda x: x.get("abr") or 0, reverse=True)
+                print(f"Success with {client}")
+                return audio[0]["url"]
 
-        if audio:
-            audio.sort(key=lambda x: x.get("abr") or 0, reverse=True)
-            print("Using audio-only:", audio[0]["format_id"])
-            return audio[0]["url"]
+            fallback = [
+                f for f in formats
+                if f.get("acodec") not in (None, "none")
+                and f.get("url")
+            ]
 
-        print("No audio-only format, trying fallback...")
+            if fallback:
+                print(f"Fallback with {client}")
+                return fallback[0]["url"]
 
-        # Prioritas 2: Video + Audio
-        fallback = [
-            f for f in formats
-            if f.get("acodec") not in (None, "none")
-            and f.get("url")
-        ]
+        except Exception as e:
+            print(f"{client} failed:", e)
 
-        if fallback:
-            fallback.sort(
-                key=lambda x: (
-                    x.get("height") or 0,
-                    x.get("abr") or 0
-                ),
-                reverse=True
-            )
-
-            print("Using fallback:", fallback[0]["format_id"])
-            return fallback[0]["url"]
-
-        print("No playable format found.")
-        return None
-
-    except Exception:
-        traceback.print_exc()
-        return None
+    return None
 
 def format_duration(seconds):
     try:
