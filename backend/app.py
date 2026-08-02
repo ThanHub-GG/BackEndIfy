@@ -39,7 +39,7 @@ SEARCH_OPTS = {
     'extract_flat': 'in_playlist',
     'skip_download': True,
     'default_search': 'ytsearch8',
-    'socket_timeout': 8,if
+    'socket_timeout': 8,
 }
 
 # ==== Opsi yt-dlp: RESOLVE STREAM (hanya dipanggil untuk 1 video saat diputar) ====
