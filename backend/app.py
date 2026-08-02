@@ -38,18 +38,28 @@ def fetch_search_flat(query):
         return None
 
 def resolve_stream(video_id):
-    try:
-        with YoutubeDL(STREAM_OPTS) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            if not info:
-                return None
-            if info.get('url'):
-                return info.get('url')
-            for f in info.get('formats', []):
-                if f.get('vcodec') == 'none' and f.get('url'):
-                    return f.get('url')
-    except Exception as e:
-        print(f"Stream error for {video_id}: {e}")
+    with YoutubeDL(STREAM_OPTS) as ydl:
+        info = ydl.extract_info(
+            f"https://youtu.be/{video_id}",
+            download=False
+        )
+
+    formats = info.get("formats", [])
+
+    audio = sorted(
+        [
+            f for f in formats
+            if f.get("vcodec") == "none"
+            and f.get("acodec") != "none"
+            and f.get("url")
+        ],
+        key=lambda x: x.get("abr") or 0,
+        reverse=True
+    )
+
+    if audio:
+        return audio[0]["url"]
+
     return None
 
 def format_duration(seconds):
