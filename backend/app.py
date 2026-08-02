@@ -88,7 +88,14 @@ def resolve_stream(video_id):
             ]
 
             if audio:
-                audio.sort(key=lambda x: x.get("abr") or 0, reverse=True)
+                audio.sort(
+                    key=lambda f: (
+                        f.get("ext") == "m4a",
+                        str(f.get("acodec", "")).startswith("mp4a"),
+                        f.get("abr") or 0
+                    ),
+                    reverse=True
+                )
                 print(f"Success with {client}")
                 return audio[0]["url"]
 
@@ -99,7 +106,15 @@ def resolve_stream(video_id):
             ]
 
             if fallback:
-                print(f"Fallback with {client}")
+                preferred = ["140", "139", "18"]
+
+                for pid in preferred:
+                    for f in fallback:
+                        if f.get("format_id") == pid:
+                            print("Using", pid)
+                            return f["url"]
+
+                print("Using fallback", fallback[0]["format_id"])
                 return fallback[0]["url"]
 
         except Exception as e:
@@ -153,18 +168,46 @@ def get_stream(video_id):
     if not stream_url:
         return jsonify({"error": "Stream tidak ditemukan"}), 500
 
-    r = requests.get(stream_url, stream=True, headers={
-        "User-Agent": "Mozilla/5.0"
-    })
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
+            "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 "
+            "Mobile/15E148 Safari/604.1"
+        )
+    }
+
+    # Forward Range request dari browser (penting untuk Safari)
+    if request.headers.get("Range"):
+        headers["Range"] = request.headers["Range"]
+
+    r = requests.get(
+        stream_url,
+        headers=headers,
+        stream=True,
+        allow_redirects=True
+    )
+
+    response_headers = {}
+
+    # Forward header penting
+    for h in (
+        "Content-Type",
+        "Content-Length",
+        "Content-Range",
+        "Accept-Ranges",
+        "Content-Encoding",
+    ):
+        if h in r.headers:
+            response_headers[h] = r.headers[h]
+
+    response_headers["Access-Control-Allow-Origin"] = "*"
+    response_headers["Cache-Control"] = "no-cache"
 
     return Response(
-        r.iter_content(chunk_size=64 * 1024),
+        r.iter_content(chunk_size=1024 * 64),
         status=r.status_code,
-        content_type=r.headers.get("Content-Type", "audio/mp4"),
-        headers={
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "no-cache"
-        }
+        headers=response_headers,
+        direct_passthrough=True,
     )
 
 if __name__ == '__main__':
