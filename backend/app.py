@@ -5,6 +5,7 @@ from functools import lru_cache
 import random
 import os
 import yt_dlp
+import traceback
 
 print("yt-dlp:", yt_dlp.version.__version__)
 app = Flask(__name__)
@@ -21,9 +22,8 @@ YDL_OPTS = {
     'no_warnings': True,
     'skip_download': True,
     'socket_timeout': 15,
-    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0'
     }
 }
 
@@ -41,30 +41,69 @@ def fetch_search_flat(query):
 
 def resolve_stream(video_id):
     try:
+        print("=" * 60)
+        print("Resolving:", video_id)
+
         with YoutubeDL(STREAM_OPTS) as ydl:
             info = ydl.extract_info(
                 f"https://www.youtube.com/watch?v={video_id}",
                 download=False
             )
 
-        formats = info.get("formats", [])
+        print("Title:", info.get("title"))
 
-        audio = sorted(
-            [
-                f for f in formats
-                if f.get("vcodec") == "none"
-                and f.get("acodec") != "none"
-                and f.get("url")
-            ],
-            key=lambda x: x.get("abr") or 0,
-            reverse=True
-        )
+        formats = info.get("formats", [])
+        print("Formats:", len(formats))
+
+        print("\n=== ALL FORMATS ===")
+        for f in formats:
+            print(
+                f"ID={f.get('format_id')} | "
+                f"EXT={f.get('ext')} | "
+                f"VCODEC={f.get('vcodec')} | "
+                f"ACODEC={f.get('acodec')} | "
+                f"ABR={f.get('abr')} | "
+                f"HAS_URL={bool(f.get('url'))}"
+            )
+
+        # Prioritas 1: Audio Only
+        audio = [
+            f for f in formats
+            if f.get("vcodec") == "none"
+            and f.get("acodec") not in (None, "none")
+            and f.get("url")
+        ]
 
         if audio:
+            audio.sort(key=lambda x: x.get("abr") or 0, reverse=True)
+            print("Using audio-only:", audio[0]["format_id"])
             return audio[0]["url"]
 
-    except Exception as e:
-        import traceback
+        print("No audio-only format, trying fallback...")
+
+        # Prioritas 2: Video + Audio
+        fallback = [
+            f for f in formats
+            if f.get("acodec") not in (None, "none")
+            and f.get("url")
+        ]
+
+        if fallback:
+            fallback.sort(
+                key=lambda x: (
+                    x.get("height") or 0,
+                    x.get("abr") or 0
+                ),
+                reverse=True
+            )
+
+            print("Using fallback:", fallback[0]["format_id"])
+            return fallback[0]["url"]
+
+        print("No playable format found.")
+        return None
+
+    except Exception:
         traceback.print_exc()
         return None
 
