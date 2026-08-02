@@ -2,23 +2,12 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from yt_dlp import YoutubeDL
 from functools import lru_cache
-from pypresence import Presence
 import time
 import random
 import os
 
 app = Flask(__name__)
 CORS(app)
-
-# ==== Konfigurasi Discord RPC ====
-client_id = '1531324674934308924'  # Ganti dengan Client ID Discord Developer milikmu jika ada
-rpc = None
-try:
-    rpc = Presence(client_id)
-    rpc.connect()
-    print("✅ Berhasil terhubung ke Discord RPC!")
-except Exception as e:
-    print("⚠️ Gagal terhubung ke Discord (Pastikan aplikasi Discord terbuka).")
 
 # Daftar cadangan kata kunci global untuk lagu bebas/acak
 GLOBAL_RANDOM_POOLS = [
@@ -29,9 +18,6 @@ GLOBAL_RANDOM_POOLS = [
 ]
 
 # ==== Opsi yt-dlp: PENCARIAN (cepat, metadata saja, tanpa resolve stream) ====
-# extract_flat='in_playlist' membuat yt-dlp TIDAK membuka tiap video satu-satu
-# untuk mengambil format/stream URL-nya — ini yang membuat pencarian lama
-# sebelumnya, karena setiap request search dulu menunggu 3x resolve audio.
 SEARCH_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
@@ -52,17 +38,15 @@ STREAM_OPTS = {
     'socket_timeout': 10,
 }
 
-# Cache hasil pencarian (metadata) — query yang sama tidak perlu hit YouTube lagi
+# Cache hasil pencarian (metadata)
 @lru_cache(maxsize=100)
 def fetch_search_flat(query):
     with YoutubeDL(SEARCH_OPTS) as ydl:
         return ydl.extract_info(f"ytsearch8:{query}", download=False)
 
-# Cache stream URL per video_id dengan masa berlaku (URL audio YouTube expire
-# setelah beberapa jam), supaya klik ulang lagu yang sama tidak resolve ulang
-# tapi juga tidak menyajikan link basi.
+# Cache stream URL per video_id dengan masa berlaku (TTL)
 _stream_cache = {}
-STREAM_TTL_SECONDS = 5 * 3600  # ~5 jam, di bawah masa expire link YouTube
+STREAM_TTL_SECONDS = 5 * 3600  # ~5 jam
 
 def resolve_stream(video_id):
     now = time.time()
@@ -109,8 +93,6 @@ def search_song():
         for entry in info.get('entries', []):
             if not entry or not entry.get('id'):
                 continue
-            # Tidak ada 'url' stream di sini — frontend resolve lewat
-            # /api/stream/<id> hanya untuk lagu yang benar-benar diklik.
             results.append(entry_to_song(entry))
         return jsonify({'results': results})
     except Exception as e:
@@ -139,54 +121,10 @@ def random_song():
 
         random_entry = random.choice(entries)
         song = entry_to_song(random_entry, album_label='Global Random Stream')
-
-        # Untuk /api/random kita resolve stream-nya sekalian (hanya 1 video,
-        # bukan semua hasil pencarian), karena lagu ini langsung diputar otomatis.
         song['url'] = resolve_stream(song['id'])
         return jsonify(song)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-
-# ==== Endpoint Discord RPC ====
-@app.route('/api/rpc', methods=['POST'])
-def update_rpc():
-    global rpc
-    data = request.json or {}
-    state = data.get('state')  # 'playing' atau 'paused'
-
-    try:
-        if rpc is None:
-            rpc = Presence(client_id)
-
-        try:
-            if state == 'playing':
-                rpc.update(
-                    state=data.get('artist', 'Artist'),
-                    details=data.get('title', 'Song Title'),
-                    large_image="https://i.imgur.com/8QG3X8r.png",
-                    large_text="Mendengarkan di THANIFY",
-                    start=int(time.time())
-                )
-            else:
-                rpc.clear()
-        except Exception:
-            rpc.connect()
-            if state == 'playing':
-                rpc.update(
-                    state=data.get('artist', 'Artist'),
-                    details=data.get('title', 'Song Title'),
-                    large_image="https://i.imgur.com/8QG3X8r.png",
-                    large_text="Mendengarkan di THANIFY",
-                    start=int(time.time())
-                )
-            else:
-                rpc.clear()
-
-        return jsonify({'status': 'sukses'})
-
-    except Exception:
-        return jsonify({'status': 'diabaikan', 'pesan': 'Discord belum terbuka'}), 200
 
 
 if __name__ == '__main__':
