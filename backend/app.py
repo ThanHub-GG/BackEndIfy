@@ -13,7 +13,6 @@ GLOBAL_RANDOM_POOLS = [
     "Judika Terbaru", "Lagu Viral TikTok", "Noah Band Pilihan"
 ]
 
-# Konfigurasi YDL yang diperbarui agar kebal blokir YouTube
 YDL_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
@@ -48,22 +47,14 @@ def resolve_stream(video_id):
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
             if not info:
                 return None
-            
-            # Cek URL langsung
             if info.get('url'):
                 return info.get('url')
-            
-            # Cari format audio terbaik yang memiliki vcodec none (hanya audio)
-            formats = info.get('formats', [])
-            for f in formats:
+            for f in info.get('formats', []):
                 if f.get('vcodec') == 'none' and f.get('url'):
                     return f.get('url')
-            
-            # Fallback jika tidak ketemu, ambil format apa saja yang ada url-nya
-            for f in formats:
+            for f in info.get('formats', []):
                 if f.get('url'):
                     return f.get('url')
-                    
     except Exception as e:
         print(f"Stream error for {video_id}: {e}")
     return None
@@ -112,11 +103,9 @@ def get_stream(video_id):
     try:
         if not video_id:
             return jsonify({'error': 'ID tidak valid'}), 400
-            
         stream_url = resolve_stream(video_id)
         if not stream_url:
             return jsonify({'error': 'Gagal mendapatkan stream audio'}), 500
-            
         return jsonify({'url': stream_url}), 200
     except Exception as e:
         print(f"API Stream Error: {e}")
