@@ -14,7 +14,7 @@ GLOBAL_RANDOM_POOLS = [
 ]
 
 YDL_BASE_OPTS = {
-    'format': 'bestaudio/best',
+    'format': 'bestaudio[ext=m4a]/bestaudio/best',
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
@@ -33,26 +33,33 @@ def fetch_search_flat(query):
         return ydl.extract_info(f"ytsearch8:{query}", download=False)
 
 def resolve_stream(video_id):
+    # Percobaan 1: Menggunakan opsi standar
     try:
         with YoutubeDL(STREAM_OPTS) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
         
-        # Cari format yang memiliki url langsung dan ramah browser (m4a / webm audio)
-        formats = info.get('formats', [])
-        best_url = None
-        for f in formats:
-            if f.get('vcodec') == 'none' and f.get('url'):  # Hanya audio
-                best_url = f.get('url')
-                if 'm4a' in f.get('ext', ''):  # Prioritaskan m4a agar kompatibel dengan semua browser/iPhone
-                    break
-        
-        if not best_url:
-            best_url = info.get('url')
+        # Cari format audio langsung yang valid
+        if info.get('url'):
+            return info.get('url')
             
-        return best_url
+        formats = info.get('formats', [])
+        for f in formats:
+            if f.get('vcodec') == 'none' and f.get('url'):
+                return f.get('url')
     except Exception as e:
-        print(f"Stream error: {e}")
-        return None
+        print(f"Stream attempt 1 failed: {e}")
+
+    # Percobaan 2: Fallback dengan format paling longgar jika percobaan 1 gagal
+    try:
+        fallback_opts = {**STREAM_OPTS, 'format': 'best'}
+        with YoutubeDL(fallback_opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+            if info.get('url'):
+                return info.get('url')
+    except Exception as e:
+        print(f"Stream attempt 2 (fallback) failed: {e}")
+        
+    return None
 
 def format_duration(seconds):
     seconds = seconds or 0
@@ -87,7 +94,7 @@ def get_stream(video_id):
     try:
         stream_url = resolve_stream(video_id)
         if not stream_url:
-            return jsonify({'error': 'Audio tidak didukung atau diblokir'}), 500
+            return jsonify({'error': 'Gagal mengambil stream audio'}), 500
         return jsonify({'url': stream_url})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
