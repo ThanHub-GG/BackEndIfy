@@ -1,5 +1,5 @@
-Flask
+flask
 flask-cors
-yt-dlp
-pypresence
 gunicorn
+yt-dlp
+requests
