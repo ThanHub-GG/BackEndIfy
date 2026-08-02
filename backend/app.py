@@ -64,9 +64,9 @@ def resolve_stream(video_id):
             return audio[0]["url"]
 
     except Exception as e:
-        print("resolve_stream:", e)
-
-    return None
+        import traceback
+        traceback.print_exc()
+        return None
 
 def format_duration(seconds):
     try:
@@ -107,20 +107,30 @@ def search_song():
         print(f"API Search Error: {e}")
         return jsonify({'results': []}), 200
 
-@app.route('/api/stream/<video_id>', methods=['GET'])
+@app.route('/api/stream/<video_id>')
 def get_stream(video_id):
     try:
-        if not video_id:
-            return jsonify({'error': 'ID tidak valid'}), 400
-            
         stream_url = resolve_stream(video_id)
+
         if not stream_url:
-            return jsonify({'error': 'Gagal mendapatkan stream audio'}), 500
-            
-        return jsonify({'url': stream_url}), 200
+            return jsonify({
+                "success": False,
+                "error": "Stream tidak ditemukan"
+            }), 500
+
+        return jsonify({
+            "success": True,
+            "url": stream_url
+        })
+
     except Exception as e:
-        print(f"API Stream Error: {e}")
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        traceback.print_exc()
+
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
