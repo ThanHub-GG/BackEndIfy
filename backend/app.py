@@ -18,14 +18,10 @@ YDL_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
-    'socket_timeout': 20,
-    'extractor_args': {
-        'youtube': {
-            'player_client': ['ios', 'web', 'android']
-        }
-    },
+    'socket_timeout': 15,
+    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     'http_headers': {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Mobile/15E148 Safari/604.1'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     }
 }
 
@@ -51,9 +47,6 @@ def resolve_stream(video_id):
                 return info.get('url')
             for f in info.get('formats', []):
                 if f.get('vcodec') == 'none' and f.get('url'):
-                    return f.get('url')
-            for f in info.get('formats', []):
-                if f.get('url'):
                     return f.get('url')
     except Exception as e:
         print(f"Stream error for {video_id}: {e}")
@@ -103,9 +96,11 @@ def get_stream(video_id):
     try:
         if not video_id:
             return jsonify({'error': 'ID tidak valid'}), 400
+            
         stream_url = resolve_stream(video_id)
         if not stream_url:
             return jsonify({'error': 'Gagal mendapatkan stream audio'}), 500
+            
         return jsonify({'url': stream_url}), 200
     except Exception as e:
         print(f"API Stream Error: {e}")
