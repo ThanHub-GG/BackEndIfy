@@ -9,15 +9,12 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Daftar cadangan kata kunci global untuk lagu bebas/acak
 GLOBAL_RANDOM_POOLS = [
-    "Top Hits Indonesia 2026", "Lagu Populer Mahalini", "Tulus Hits",
+    "Top Hits Indonesia", "Lagu Populer Mahalini", "Tulus Hits",
     "Judika Terbaru", "Lagu Viral TikTok", "Noah Band Pilihan",
-    "Feast Peradaban", "Sheila on 7 Hits", "Hivi Kereta Kencana",
-    "Rizky Febian Lagu Terbaik", "Denny Caknan Niken Salindry", "Dewa 19 Kangen"
+    "Sheila on 7 Hits", "Hivi Kereta Kencana", "Dewa 19 Kangen"
 ]
 
-# ==== Opsi yt-dlp: PENCARIAN (cepat, metadata saja, tanpa resolve stream) ====
 SEARCH_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
@@ -25,10 +22,9 @@ SEARCH_OPTS = {
     'extract_flat': 'in_playlist',
     'skip_download': True,
     'default_search': 'ytsearch8',
-    'socket_timeout': 8,
+    'socket_timeout': 10,
 }
 
-# ==== Opsi yt-dlp: RESOLVE STREAM (hanya dipanggil untuk 1 video saat diputar) ====
 STREAM_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
@@ -38,15 +34,13 @@ STREAM_OPTS = {
     'socket_timeout': 10,
 }
 
-# Cache hasil pencarian (metadata)
 @lru_cache(maxsize=100)
 def fetch_search_flat(query):
     with YoutubeDL(SEARCH_OPTS) as ydl:
         return ydl.extract_info(f"ytsearch8:{query}", download=False)
 
-# Cache stream URL per video_id dengan masa berlaku (TTL)
 _stream_cache = {}
-STREAM_TTL_SECONDS = 5 * 3600  # ~5 jam
+STREAM_TTL_SECONDS = 5 * 3600
 
 def resolve_stream(video_id):
     now = time.time()
@@ -62,13 +56,11 @@ def resolve_stream(video_id):
         _stream_cache[video_id] = {'url': stream_url, 'ts': now}
     return stream_url
 
-
 def format_duration(seconds):
     seconds = seconds or 0
     mins = int(seconds // 60)
     secs = int(seconds % 60)
     return f"{mins}:{secs:02d}"
-
 
 def entry_to_song(entry, album_label='YouTube Stream'):
     thumbnails = entry.get('thumbnails', [])
@@ -80,7 +72,6 @@ def entry_to_song(entry, album_label='YouTube Stream'):
         'dur': format_duration(entry.get('duration', 0)),
         'cover': thumbnails[-1]['url'] if thumbnails else '',
     }
-
 
 @app.route('/api/search', methods=['GET'])
 def search_song():
@@ -96,8 +87,8 @@ def search_song():
             results.append(entry_to_song(entry))
         return jsonify({'results': results})
     except Exception as e:
+        print(f"Error pada pencarian: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/stream/<video_id>', methods=['GET'])
 def get_stream(video_id):
@@ -107,8 +98,8 @@ def get_stream(video_id):
             return jsonify({'error': 'Gagal mendapatkan stream audio'}), 500
         return jsonify({'url': stream_url})
     except Exception as e:
+        print(f"Error pada stream: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/random', methods=['GET'])
 def random_song():
@@ -124,8 +115,8 @@ def random_song():
         song['url'] = resolve_stream(song['id'])
         return jsonify(song)
     except Exception as e:
+        print(f"Error pada random: {str(e)}")
         return jsonify({'error': str(e)}), 500
-
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
