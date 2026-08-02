@@ -21,6 +21,7 @@ YDL_OPTS = {
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
+    'cookiefile': 'cookies.txt',
     'socket_timeout': 15,
     'http_headers': {
         'User-Agent': 'Mozilla/5.0'
