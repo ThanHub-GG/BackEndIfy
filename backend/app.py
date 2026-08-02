@@ -4,7 +4,9 @@ from yt_dlp import YoutubeDL
 from functools import lru_cache
 import random
 import os
+import yt_dlp
 
+print("yt-dlp:", yt_dlp.version.__version__)
 app = Flask(__name__)
 CORS(app)
 
@@ -38,27 +40,31 @@ def fetch_search_flat(query):
         return None
 
 def resolve_stream(video_id):
-    with YoutubeDL(STREAM_OPTS) as ydl:
-        info = ydl.extract_info(
-            f"https://youtu.be/{video_id}",
-            download=False
+    try:
+        with YoutubeDL(STREAM_OPTS) as ydl:
+            info = ydl.extract_info(
+                f"https://www.youtube.com/watch?v={video_id}",
+                download=False
+            )
+
+        formats = info.get("formats", [])
+
+        audio = sorted(
+            [
+                f for f in formats
+                if f.get("vcodec") == "none"
+                and f.get("acodec") != "none"
+                and f.get("url")
+            ],
+            key=lambda x: x.get("abr") or 0,
+            reverse=True
         )
 
-    formats = info.get("formats", [])
+        if audio:
+            return audio[0]["url"]
 
-    audio = sorted(
-        [
-            f for f in formats
-            if f.get("vcodec") == "none"
-            and f.get("acodec") != "none"
-            and f.get("url")
-        ],
-        key=lambda x: x.get("abr") or 0,
-        reverse=True
-    )
-
-    if audio:
-        return audio[0]["url"]
+    except Exception as e:
+        print("resolve_stream:", e)
 
     return None
 
