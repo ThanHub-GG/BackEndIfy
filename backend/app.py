@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from yt_dlp import YoutubeDL
 from functools import lru_cache
+from flask import Response
+import requests
 import random
 import os
 import yt_dlp
@@ -144,30 +146,26 @@ def search_song():
         print(f"API Search Error: {e}")
         return jsonify({'results': []}), 200
 
-@app.route('/api/stream/<video_id>')
+@app.route("/api/stream/<video_id>")
 def get_stream(video_id):
-    try:
-        stream_url = resolve_stream(video_id)
+    stream_url = resolve_stream(video_id)
 
-        if not stream_url:
-            return jsonify({
-                "success": False,
-                "error": "Stream tidak ditemukan"
-            }), 500
+    if not stream_url:
+        return jsonify({"error": "Stream tidak ditemukan"}), 500
 
-        return jsonify({
-            "success": True,
-            "url": stream_url
-        })
+    r = requests.get(stream_url, stream=True, headers={
+        "User-Agent": "Mozilla/5.0"
+    })
 
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
+    return Response(
+        r.iter_content(chunk_size=64 * 1024),
+        status=r.status_code,
+        content_type=r.headers.get("Content-Type", "audio/mp4"),
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache"
+        }
+    )
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 8080))
