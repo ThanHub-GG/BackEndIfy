@@ -15,14 +15,14 @@ GLOBAL_RANDOM_POOLS = [
     "Sheila on 7 Hits", "Hivi Kereta Kencana", "Dewa 19 Kangen"
 ]
 
-# Konfigurasi yt-dlp yang dioptimalkan agar tidak mudah diblokir dan cepat
+# Konfigurasi yt-dlp yang diperbarui dengan client args anti-blokir
 YDL_BASE_OPTS = {
     'format': 'bestaudio/best',
     'quiet': True,
     'no_warnings': True,
     'skip_download': True,
-    'socket_timeout': 15,
-    'extractor_args': {'youtube': {'player_client': ['android', 'web']}}, # <- Tambahkan baris ini
+    'socket_timeout': 20,
+    'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
     'http_headers': {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     }
@@ -53,13 +53,24 @@ def resolve_stream(video_id):
     if cached and (now - cached['ts']) < STREAM_TTL_SECONDS:
         return cached['url']
 
-    with YoutubeDL(STREAM_OPTS) as ydl:
-        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+    try:
+        with YoutubeDL(STREAM_OPTS) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
 
-    stream_url = info.get('url')
-    if stream_url:
-        _stream_cache[video_id] = {'url': stream_url, 'ts': now}
-    return stream_url
+        stream_url = info.get('url')
+        if not stream_url:
+            for f in info.get('formats', []):
+                if f.get('vcodec') == 'none' and f.get('url'):
+                    stream_url = f.get('url')
+                    break
+
+        if stream_url:
+            _stream_cache[video_id] = {'url': stream_url, 'ts': now}
+            return stream_url
+    except Exception as e:
+        print(f"Error resolve_stream untuk {video_id}: {str(e)}")
+        
+    return None
 
 def format_duration(seconds):
     seconds = seconds or 0
