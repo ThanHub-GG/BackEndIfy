@@ -10,6 +10,12 @@ import traceback
 
 print("yt-dlp version:", yt_dlp.version.__version__)
 
+# Otomatis membuat cookies.txt dari Environment Variable Railway jika ada
+if "YT_COOKIES" in os.environ:
+    with open("cookies.txt", "w", encoding="utf-8") as f:
+        f.write(os.environ["YT_COOKIES"])
+    print("Cookies loaded from environment variable.")
+
 app = Flask(__name__)
 CORS(app)
 
@@ -26,6 +32,8 @@ YDL_OPTS = {
     "socket_timeout": 20,
     "extractor_retries": 3,
     "retries": 3,
+    # Menggunakan file cookies.txt agar lolos sensor bot datacenter
+    "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
     "http_headers": {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -48,7 +56,7 @@ def fetch_search_flat(query):
         print(f"Search error: {e}")
         return None
 
-# Urutan client diubah agar mweb atau android berada di awal untuk meminimalkan blokir bot
+# Urutan client (mweb/android/ios/web/tv)
 CLIENTS = [
     "mweb",
     "android",
@@ -67,7 +75,6 @@ def resolve_stream(video_id):
                 "extractor_args": {
                     "youtube": {
                         "player_client": [client],
-                        # Memaksa melewati pemeriksaan client web/mweb default jika perlu
                         "skip": ["dash", "hls"]
                     }
                 }
