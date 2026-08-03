@@ -1,15 +1,15 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from yt_dlp import YoutubeDL
 from functools import lru_cache
-from flask import Response
 import requests
 import random
 import os
 import yt_dlp
 import traceback
 
-print("yt-dlp:", yt_dlp.version.__version__)
+print("yt-dlp version:", yt_dlp.version.__version__)
+
 app = Flask(__name__)
 CORS(app)
 
@@ -24,10 +24,8 @@ YDL_OPTS = {
     "no_warnings": True,
     "skip_download": True,
     "socket_timeout": 20,
-
     "extractor_retries": 3,
     "retries": 3,
-
     "http_headers": {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -50,12 +48,13 @@ def fetch_search_flat(query):
         print(f"Search error: {e}")
         return None
 
+# Urutan client diubah agar mweb atau android berada di awal untuk meminimalkan blokir bot
 CLIENTS = [
-    "ios",
+    "mweb",
     "android",
+    "ios",
     "web",
-    "tv",
-    "mweb"
+    "tv"
 ]
 
 def resolve_stream(video_id):
@@ -67,7 +66,9 @@ def resolve_stream(video_id):
                 **STREAM_OPTS,
                 "extractor_args": {
                     "youtube": {
-                        "player_client": [client]
+                        "player_client": [client],
+                        # Memaksa melewati pemeriksaan client web/mweb default jika perlu
+                        "skip": ["dash", "hls"]
                     }
                 }
             }
@@ -107,18 +108,17 @@ def resolve_stream(video_id):
 
             if fallback:
                 preferred = ["140", "139", "18"]
-
                 for pid in preferred:
                     for f in fallback:
                         if f.get("format_id") == pid:
-                            print("Using", pid)
+                            print("Using preferred format:", pid)
                             return f["url"]
 
-                print("Using fallback", fallback[0]["format_id"])
+                print("Using fallback format:", fallback[0]["format_id"])
                 return fallback[0]["url"]
 
         except Exception as e:
-            print(f"{client} failed:", e)
+            print(f"Client {client} failed: {e}")
 
     return None
 
@@ -166,7 +166,7 @@ def get_stream(video_id):
     stream_url = resolve_stream(video_id)
 
     if not stream_url:
-        return jsonify({"error": "Stream tidak ditemukan"}), 500
+        return jsonify({"error": "Stream tidak ditemukan atau diblokir YouTube"}), 500
 
     headers = {
         "User-Agent": (
@@ -176,20 +176,22 @@ def get_stream(video_id):
         )
     }
 
-    # Forward Range request dari browser (penting untuk Safari)
     if request.headers.get("Range"):
         headers["Range"] = request.headers["Range"]
 
-    r = requests.get(
-        stream_url,
-        headers=headers,
-        stream=True,
-        allow_redirects=True
-    )
+    try:
+        r = requests.get(
+            stream_url,
+            headers=headers,
+            stream=True,
+            allow_redirects=True,
+            timeout=10
+        )
+    except Exception as e:
+        print(f"Proxy request error: {e}")
+        return jsonify({"error": "Gagal menghubungkan ke server stream"}), 500
 
     response_headers = {}
-
-    # Forward header penting
     for h in (
         "Content-Type",
         "Content-Length",
