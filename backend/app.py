@@ -8,9 +8,9 @@ import os
 import yt_dlp
 import traceback
 
-print("yt-dlp version:", yt_dlp.version.__version__)
+print("yt-dlp:", yt_dlp.version.__version__)
 
-# Otomatis membuat cookies.txt dari Environment Variable Railway jika ada
+# Otomatis membuat file cookies.txt dari Environment Variable Railway
 if "YT_COOKIES" in os.environ:
     with open("cookies.txt", "w", encoding="utf-8") as f:
         f.write(os.environ["YT_COOKIES"])
@@ -32,7 +32,7 @@ YDL_OPTS = {
     "socket_timeout": 20,
     "extractor_retries": 3,
     "retries": 3,
-    # Menggunakan file cookies.txt agar lolos sensor bot datacenter
+    # Menggunakan cookies.txt untuk bypass proteksi bot YouTube
     "cookiefile": "cookies.txt" if os.path.exists("cookies.txt") else None,
     "http_headers": {
         "User-Agent": (
@@ -56,13 +56,12 @@ def fetch_search_flat(query):
         print(f"Search error: {e}")
         return None
 
-# Urutan client (mweb/android/ios/web/tv)
 CLIENTS = [
-    "mweb",
-    "android",
     "ios",
+    "android",
     "web",
-    "tv"
+    "tv",
+    "mweb"
 ]
 
 def resolve_stream(video_id):
@@ -74,8 +73,7 @@ def resolve_stream(video_id):
                 **STREAM_OPTS,
                 "extractor_args": {
                     "youtube": {
-                        "player_client": [client],
-                        "skip": ["dash", "hls"]
+                        "player_client": [client]
                     }
                 }
             }
@@ -115,17 +113,18 @@ def resolve_stream(video_id):
 
             if fallback:
                 preferred = ["140", "139", "18"]
+
                 for pid in preferred:
                     for f in fallback:
                         if f.get("format_id") == pid:
-                            print("Using preferred format:", pid)
+                            print("Using", pid)
                             return f["url"]
 
-                print("Using fallback format:", fallback[0]["format_id"])
+                print("Using fallback", fallback[0]["format_id"])
                 return fallback[0]["url"]
 
         except Exception as e:
-            print(f"Client {client} failed: {e}")
+            print(f"{client} failed:", e)
 
     return None
 
@@ -173,7 +172,7 @@ def get_stream(video_id):
     stream_url = resolve_stream(video_id)
 
     if not stream_url:
-        return jsonify({"error": "Stream tidak ditemukan atau diblokir YouTube"}), 500
+        return jsonify({"error": "Stream tidak ditemukan"}), 500
 
     headers = {
         "User-Agent": (
@@ -186,19 +185,15 @@ def get_stream(video_id):
     if request.headers.get("Range"):
         headers["Range"] = request.headers["Range"]
 
-    try:
-        r = requests.get(
-            stream_url,
-            headers=headers,
-            stream=True,
-            allow_redirects=True,
-            timeout=10
-        )
-    except Exception as e:
-        print(f"Proxy request error: {e}")
-        return jsonify({"error": "Gagal menghubungkan ke server stream"}), 500
+    r = requests.get(
+        stream_url,
+        headers=headers,
+        stream=True,
+        allow_redirects=True
+    )
 
     response_headers = {}
+
     for h in (
         "Content-Type",
         "Content-Length",
