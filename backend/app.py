@@ -15,9 +15,11 @@ _cache = {}
 CACHE_TTL_SECONDS = 300
 
 PIPED_INSTANCES = [
-    'https://pipedapi.adminforge.de',
     'https://pipedapi.kavin.rocks',
-    'https://api.piped.yt'
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.tokhmi.xyz',
+    'https://api-piped.mha.fi',
+    'https://pipedapi.leptons.xyz'
 ]
 
 def cached(key, fn):
