@@ -91,7 +91,7 @@ def get_piped_stream(video_id):
 def get_stream(video_id):
     stream_url = None
     
-    # Daftar instance Piped yang lebih luas dan aktif
+    # Daftar instance Piped publik terbaru
     active_piped = [
         'https://pipedapi.kavin.rocks',
         'https://pipedapi.adminforge.de',
@@ -101,7 +101,7 @@ def get_stream(video_id):
 
     for instance in active_piped:
         try:
-            res = requests.get(f"{instance}/streams/{video_id}", timeout=5)
+            res = requests.get(f"{instance}/streams/{video_id}", timeout=4)
             if res.status_code == 200:
                 data = res.json()
                 audio_streams = data.get('audioStreams', [])
@@ -110,11 +110,12 @@ def get_stream(video_id):
                     if audio_streams[0].get('url'):
                         stream_url = audio_streams[0]['url']
                         break
-        except Exception:
+        except Exception as e:
+            print(f"Failed to fetch from {instance}: {e}")
             continue
 
     if not stream_url:
-        return jsonify({"error": "Gagal mendapatkan stream audio dari semua server cadangan"}), 500
+        return jsonify({"error": "Semua server Piped cadangan sedang offline atau sibuk"}), 500
 
     try:
         headers = {
