@@ -10,12 +10,10 @@ import traceback
 app = Flask(__name__)
 CORS(app)
 
-# Inisialisasi YTMusic & Memory Cache sederhana
 _yt = YTMusic()
 _cache = {}
 CACHE_TTL_SECONDS = 300
 
-# Daftar instance Piped publik untuk fallback stream cadangan
 PIPED_INSTANCES = [
     'https://pipedapi.adminforge.de',
     'https://pipedapi.kavin.rocks',
@@ -72,15 +70,14 @@ def search_song():
         return jsonify({'results': []}), 200
 
 def get_piped_stream(video_id):
-    """Mencari stream audio melalui publik Piped API sebagai alternatif jika yt-dlp diblokir 429"""
+    """Mengambil stream audio langsung dari Piped API (Aman untuk server cloud/datacenter)"""
     for instance in PIPED_INSTANCES:
         try:
-            res = requests.get(f"{instance}/streams/{video_id}", timeout=5)
+            res = requests.get(f"{instance}/streams/{video_id}", timeout=6)
             if res.status_code == 200:
                 data = res.json()
                 audio_streams = data.get('audioStreams', [])
                 if audio_streams:
-                    # Urutkan berdasarkan bitrate tertinggi
                     audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
                     if audio_streams[0].get('url'):
                         return audio_streams[0]['url']
@@ -91,37 +88,33 @@ def get_piped_stream(video_id):
 @app.route("/api/stream/<video_id>", methods=['GET'])
 def get_stream(video_id):
     stream_url = None
-    clients = ['android', 'web', 'mweb', 'ios']
 
-    # 1. Coba gunakan yt-dlp dengan rotasi client terlebih dahulu
-    for client in clients:
-        ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
-            'quiet': True,
-            'noplaylist': True,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': [client]
-                }
-            }
-        }
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                formats = info.get('formats', [])
-                audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('url')]
-                
-                if audio_formats:
-                    audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
-                    stream_url = audio_formats[0]['url']
-                    break
-        except Exception:
-            continue
+    # 1. PRIORITAS UTAMA: Gunakan Piped API dulu agar tidak kena blokir 429 bot detection YouTube
+    print(f"Fetching stream for {video_id} via Piped API...")
+    stream_url = get_piped_stream(video_id)
 
-    # 2. Jika yt-dlp gagal karena 429 / bot detection, langsung fallback ke Piped API!
+    # 2. CADANGAN TERAKHIR: Jika semua Piped instance gagal, baru coba pakai yt-dlp
     if not stream_url:
-        print(f"yt-dlp blocked or failed for {video_id}, switching to Piped fallback...")
-        stream_url = get_piped_stream(video_id)
+        print(f"Piped failed, trying yt-dlp fallback for {video_id}...")
+        clients = ['android', 'web']
+        for client in clients:
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                'quiet': True,
+                'noplaylist': True,
+                'extractor_args': {'youtube': {'player_client': [client]}}
+            }
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                    formats = info.get('formats', [])
+                    audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('url')]
+                    if audio_formats:
+                        audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
+                        stream_url = audio_formats[0]['url']
+                        break
+            except Exception:
+                continue
 
     if not stream_url:
         return jsonify({"error": "Gagal mendapatkan stream audio dari semua provider"}), 500
