@@ -8,7 +8,6 @@ import time
 import traceback
 
 app = Flask(__name__)
-# Konfigurasi CORS menyeluruh untuk semua origin dan method
 CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 @app.after_request
@@ -18,7 +17,12 @@ def add_cors_headers(response):
     response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return response
 
-_yt = YTMusic()
+# Inisialisasi aman
+try:
+    _yt = YTMusic()
+except Exception as e:
+    print(f"Warning YTMusic init: {e}")
+
 _cache = {}
 CACHE_TTL_SECONDS = 300
 
@@ -38,6 +42,10 @@ def cached(key, fn):
     _cache[key] = (now, result)
     return result
 
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({"status": "Backend is running!"}), 200
+
 @app.route('/api/search', methods=['GET', 'OPTIONS'])
 def search_song():
     if request.method == 'OPTIONS':
@@ -54,7 +62,7 @@ def search_song():
         )
         
         results = []
-        for entry in search_rules := search_results:
+        for entry in search_results:
             vid_id = entry.get('videoId')
             if not vid_id:
                 continue
@@ -86,7 +94,7 @@ def get_stream(video_id):
     if request.method == 'OPTIONS':
         return '', 200
         
-    stream_url = None
+    stream_url = nationality = None
     
     for instance in PIPED_INSTANCES:
         try:
@@ -115,7 +123,7 @@ def get_stream(video_id):
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
                     formats = info.get('formats', [])
-                    audio_formats = [f for f in formats if f.get('vcodec'] == 'none' and f.get('url')]
+                    audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('url')]
                     if audio_formats:
                         audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
                         stream_url = audio_formats[0]['url']
