@@ -17,9 +17,8 @@ CACHE_TTL_SECONDS = 300
 PIPED_INSTANCES = [
     'https://pipedapi.kavin.rocks',
     'https://pipedapi.adminforge.de',
-    'https://pipedapi.tokhmi.xyz',
-    'https://api-piped.mha.fi',
-    'https://pipedapi.leptons.xyz'
+    'https://api.piped.yt',
+    'https://pipedapi.tokhmi.xyz'
 ]
 
 def cached(key, fn):
@@ -71,35 +70,12 @@ def search_song():
         print(f"API Search Error: {e}")
         return jsonify({'results': []}), 200
 
-def get_piped_stream(video_id):
-    """Mengambil stream audio langsung dari Piped API (Aman untuk server cloud/datacenter)"""
-    for instance in PIPED_INSTANCES:
-        try:
-            res = requests.get(f"{instance}/streams/{video_id}", timeout=6)
-            if res.status_code == 200:
-                data = res.json()
-                audio_streams = data.get('audioStreams', [])
-                if audio_streams:
-                    audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                    if audio_streams[0].get('url'):
-                        return audio_streams[0]['url']
-        except Exception:
-            continue
-    return None
-
 @app.route("/api/stream/<video_id>", methods=['GET'])
 def get_stream(video_id):
     stream_url = None
     
-    # Daftar instance Piped publik terbaru
-    active_piped = [
-        'https://pipedapi.kavin.rocks',
-        'https://pipedapi.adminforge.de',
-        'https://api.piped.yt',
-        'https://pipedapi.tokhmi.xyz'
-    ]
-
-    for instance in active_piped:
+    # 1. Coba ambil dari Piped API terlebih dahulu
+    for instance in PIPED_INSTANCES:
         try:
             res = requests.get(f"{instance}/streams/{video_id}", timeout=4)
             if res.status_code == 200:
@@ -110,12 +86,33 @@ def get_stream(video_id):
                     if audio_streams[0].get('url'):
                         stream_url = audio_streams[0]['url']
                         break
-        except Exception as e:
-            print(f"Failed to fetch from {instance}: {e}")
+        except Exception:
             continue
 
+    # 2. Jika Piped gagal, gunakan yt-dlp dengan client Android/Web sebagai cadangan
     if not stream_url:
-        return jsonify({"error": "Semua server Piped cadangan sedang offline atau sibuk"}), 500
+        clients = ['android', 'web']
+        for client in clients:
+            ydl_opts = {
+                'format': 'bestaudio[ext=m4a]/bestaudio/best',
+                'quiet': True,
+                'noplaylist': True,
+                'extractor_args': {'youtube': {'player_client': [client]}}
+            }
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                    formats = info.get('formats', [])
+                    audio_formats = [f for f in formats if f.get('vcodec'] == 'none' and f.get('url')]
+                    if audio_formats:
+                        audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
+                        stream_url = audio_formats[0]['url']
+                        break
+            except Exception:
+                continue
+
+    if not stream_url:
+        return jsonify({"error": "Gagal mendapatkan stream audio dari semua server"}), 500
 
     try:
         headers = {
