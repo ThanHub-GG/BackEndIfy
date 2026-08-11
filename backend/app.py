@@ -96,32 +96,41 @@ def get_stream(video_id):
         
     stream_url = None
     
-    # Daftar instance Invidious publik yang stabil untuk cadangan stream
-    INVIDIOUS_INSTANCES = [
-        'https://invidious.privacyredirect.com',
-        'https://vid.priv.au',
-        'https://inv.nadeko.net',
-        'https://invidious.flokinet.to'
-    ]
+    # Menggunakan layanan publik stabil untuk mengambil direct stream audio YouTube
+    try:
+        # Menggunakan Cobalt API instance publik atau layanan wrapper stabil
+        res = requests.post(
+            "https://co.wuk.sh/api/json",
+            json={"url": f"https://www.youtube.com/watch?v={video_id}", "isAudioOnly": True},
+            headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+            timeout=6
+        )
+        if res.status_code == 200:
+            data = res.json()
+            if data.get('status') == 'redirect' or data.get('status') == 'stream':
+                stream_url = data.get('url')
+    except Exception as e:
+        print(f"Cobalt API error: {e}")
 
-    for instance in INVIDIOUS_INSTANCES:
-        try:
-            res = requests.get(f"{instance}/api/v1/videos/{video_id}", timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                adaptive_formats = data.get('adaptiveFormats', [])
-                # Cari format audio dengan bitrate terbaik
-                audio_streams = [f for f in adaptive_formats if 'audio' in f.get('type', '')]
-                if audio_streams:
-                    audio_streams.sort(key=lambda x: int(x.get('bitrate', 0)), reverse=True)
-                    if audio_streams[0].get('url'):
-                        stream_url = audio_streams[0]['url']
-                        break
-        except Exception:
-            continue
+    # Fallback ke Piped jika layanan utama sedang sibuk
+    if not stream_url:
+        PIPED_FALLBACKS = ['https://pipedapi.kavin.rocks', 'https://api.piped.yt']
+        for instance in PIPED_FALLBACKS:
+            try:
+                res = requests.get(f"{instance}/streams/{video_id}", timeout=4)
+                if res.status_code == 200:
+                    data = res.json()
+                    audio_streams = data.get('audioStreams', [])
+                    if audio_streams:
+                        audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                        if audio_streams[0].get('url'):
+                            stream_url = audio_streams[0]['url']
+                            break
+            except Exception:
+                continue
 
     if not stream_url:
-        return jsonify({"error": "Gagal mendapatkan stream audio dari server Invidious"}), 500
+        return jsonify({"error": "Gagal mendapatkan stream audio dari server"}), 500
 
     try:
         headers = {
