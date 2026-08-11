@@ -90,36 +90,31 @@ def get_piped_stream(video_id):
 @app.route("/api/stream/<video_id>", methods=['GET'])
 def get_stream(video_id):
     stream_url = None
+    
+    # Daftar instance Piped yang lebih luas dan aktif
+    active_piped = [
+        'https://pipedapi.kavin.rocks',
+        'https://pipedapi.adminforge.de',
+        'https://api.piped.yt',
+        'https://pipedapi.tokhmi.xyz'
+    ]
 
-    # 1. PRIORITAS UTAMA: Gunakan Piped API dulu agar tidak kena blokir 429 bot detection YouTube
-    print(f"Fetching stream for {video_id} via Piped API...")
-    stream_url = get_piped_stream(video_id)
-
-    # 2. CADANGAN TERAKHIR: Jika semua Piped instance gagal, baru coba pakai yt-dlp
-    if not stream_url:
-        print(f"Piped failed, trying yt-dlp fallback for {video_id}...")
-        clients = ['android', 'web']
-        for client in clients:
-            ydl_opts = {
-                'format': 'bestaudio[ext=m4a]/bestaudio/best',
-                'quiet': True,
-                'noplaylist': True,
-                'extractor_args': {'youtube': {'player_client': [client]}}
-            }
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-                    formats = info.get('formats', [])
-                    audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('url')]
-                    if audio_formats:
-                        audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
-                        stream_url = audio_formats[0]['url']
+    for instance in active_piped:
+        try:
+            res = requests.get(f"{instance}/streams/{video_id}", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                audio_streams = data.get('audioStreams', [])
+                if audio_streams:
+                    audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                    if audio_streams[0].get('url'):
+                        stream_url = audio_streams[0]['url']
                         break
-            except Exception:
-                continue
+        except Exception:
+            continue
 
     if not stream_url:
-        return jsonify({"error": "Gagal mendapatkan stream audio dari semua provider"}), 500
+        return jsonify({"error": "Gagal mendapatkan stream audio dari semua server cadangan"}), 500
 
     try:
         headers = {
