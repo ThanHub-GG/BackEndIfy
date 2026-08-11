@@ -4,20 +4,39 @@ from ytmusicapi import YTMusic
 import yt_dlp
 import requests
 import os
+import time
 import traceback
 
 app = Flask(__name__)
 CORS(app)
 
-ytmusic = YTMusic()
+# Inisialisasi YTMusic & Memory Cache sederhana
+_yt = YTMusic()
+_cache = {}
+CACHE_TTL_SECONDS = 300
+
+def cached(key, fn):
+    now = time.time()
+    hit = _cache.get(key)
+    if hit is not None and now - hit[0] < CACHE_TTL_SECONDS:
+        return hit[1]
+    result = fn()
+    _cache[key] = (now, result)
+    return result
 
 @app.route('/api/search', methods=['GET'])
 def search_song():
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify({'results': []}), 200
+    
     try:
-        search_results = ytmusic.search(query, filter="songs")
+        # Menggunakan caching agar tidak spam request ke YouTube Music
+        search_results = cached(
+            f"search:{query}", 
+            lambda: _yt.search(query, filter="songs", limit=20)
+        )
+        
         results = []
         for entry in search_results:
             vid_id = entry.get('videoId')
@@ -46,9 +65,9 @@ def search_song():
         print(f"API Search Error: {e}")
         return jsonify({'results': []}), 200
 
-@app.route("/api/stream/<video_id>")
+@app.route("/api/stream/<video_id>", methods=['GET'])
 def get_stream(video_id):
-    # Menggunakan rotasi player_client agar yt-dlp aman dari blokir bot tanpa cookies
+    # Rotasi player_client untuk menghindari blokir bot di server cloud
     clients = ['android', 'web', 'mweb', 'ios']
     stream_url = None
 
@@ -73,7 +92,7 @@ def get_stream(video_id):
                     audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
                     stream_url = audio_formats[0]['url']
                     break
-        except Exception as e:
+        except Exception:
             continue
 
     if not stream_url:
