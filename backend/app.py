@@ -15,6 +15,13 @@ _yt = YTMusic()
 _cache = {}
 CACHE_TTL_SECONDS = 300
 
+# Daftar instance Piped publik untuk fallback stream cadangan
+PIPED_INSTANCES = [
+    'https://pipedapi.adminforge.de',
+    'https://pipedapi.kavin.rocks',
+    'https://api.piped.yt'
+]
+
 def cached(key, fn):
     now = time.time()
     hit = _cache.get(key)
@@ -31,7 +38,6 @@ def search_song():
         return jsonify({'results': []}), 200
     
     try:
-        # Menggunakan caching agar tidak spam request ke YouTube Music
         search_results = cached(
             f"search:{query}", 
             lambda: _yt.search(query, filter="songs", limit=20)
@@ -65,12 +71,29 @@ def search_song():
         print(f"API Search Error: {e}")
         return jsonify({'results': []}), 200
 
+def get_piped_stream(video_id):
+    """Mencari stream audio melalui publik Piped API sebagai alternatif jika yt-dlp diblokir 429"""
+    for instance in PIPED_INSTANCES:
+        try:
+            res = requests.get(f"{instance}/streams/{video_id}", timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                audio_streams = data.get('audioStreams', [])
+                if audio_streams:
+                    # Urutkan berdasarkan bitrate tertinggi
+                    audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                    if audio_streams[0].get('url'):
+                        return audio_streams[0]['url']
+        except Exception:
+            continue
+    return None
+
 @app.route("/api/stream/<video_id>", methods=['GET'])
 def get_stream(video_id):
-    # Rotasi player_client untuk menghindari blokir bot di server cloud
-    clients = ['android', 'web', 'mweb', 'ios']
     stream_url = None
+    clients = ['android', 'web', 'mweb', 'ios']
 
+    # 1. Coba gunakan yt-dlp dengan rotasi client terlebih dahulu
     for client in clients:
         ydl_opts = {
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
@@ -95,8 +118,13 @@ def get_stream(video_id):
         except Exception:
             continue
 
+    # 2. Jika yt-dlp gagal karena 429 / bot detection, langsung fallback ke Piped API!
     if not stream_url:
-        return jsonify({"error": "Gagal mendapatkan stream audio dari YouTube"}), 500
+        print(f"yt-dlp blocked or failed for {video_id}, switching to Piped fallback...")
+        stream_url = get_piped_stream(video_id)
+
+    if not stream_url:
+        return jsonify({"error": "Gagal mendapatkan stream audio dari semua provider"}), 500
 
     try:
         headers = {
