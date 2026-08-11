@@ -2,8 +2,17 @@ from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from ytmusicapi import YTMusic
 import yt_dlp
-import requests  # <--- PASTIKAN INI ADA DI ATAS
+import requests
 import os
+import traceback
+
+# --- OTOMATIS GENERATE COOKIES DARI ENVIRONMENT VARIABLE RAILWAY ---
+if "YT_COOKIES" in os.environ:
+    with open("cookies.txt", "w", encoding="utf-8") as f:
+        f.write(os.environ["YT_COOKIES"].strip())
+    print("Cookies.txt successfully generated from environment variables.")
+else:
+    print("WARNING: YT_COOKIES environment variable not found!")
 
 app = Flask(__name__)
 CORS(app)
@@ -51,7 +60,13 @@ def get_stream(video_id):
         'format': 'bestaudio[ext=m4a]/bestaudio/best',
         'quiet': True,
         'noplaylist': True,
-        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None
+        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web']
+            }
+        }
     }
     
     try:
@@ -59,7 +74,6 @@ def get_stream(video_id):
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
             formats = info.get('formats', [])
             
-            # Prioritaskan format m4a atau audio yang memiliki url valid
             audio_formats = [
                 f for f in formats 
                 if f.get('vcodec') == 'none' and f.get('url')
@@ -68,7 +82,6 @@ def get_stream(video_id):
             if not audio_formats:
                 return jsonify({"error": "Format audio tidak ditemukan"}), 500
                 
-            # Urutkan agar m4a berada di prioritas utama
             audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
             stream_url = audio_formats[0]['url']
 
@@ -85,7 +98,6 @@ def get_stream(video_id):
             if h in r.headers:
                 response_headers[h] = r.headers[h]
 
-        # Pastikan Content-Type aman untuk audio HTML5 jika tidak terdeteksi
         if "Content-Type" not in response_headers or response_headers["Content-Type"] == "application/octet-stream":
             response_headers["Content-Type"] = "audio/mp4"
 
@@ -100,6 +112,7 @@ def get_stream(video_id):
         )
     except Exception as e:
         print(f"Stream error: {e}")
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
