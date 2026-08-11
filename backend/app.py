@@ -6,14 +6,6 @@ import requests
 import os
 import traceback
 
-# --- OTOMATIS GENERATE COOKIES DARI ENVIRONMENT VARIABLE RAILWAY ---
-if "YT_COOKIES" in os.environ:
-    with open("cookies.txt", "w", encoding="utf-8") as f:
-        f.write(os.environ["YT_COOKIES"].strip())
-    print("Cookies.txt successfully generated from environment variables.")
-else:
-    print("WARNING: YT_COOKIES environment variable not found!")
-
 app = Flask(__name__)
 CORS(app)
 
@@ -56,35 +48,38 @@ def search_song():
 
 @app.route("/api/stream/<video_id>")
 def get_stream(video_id):
-    ydl_opts = {
-        'format': 'bestaudio[ext=m4a]/bestaudio/best',
-        'quiet': True,
-        'noplaylist': True,
-        'cookiefile': 'cookies.txt' if os.path.exists('cookies.txt') else None,
-        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'web']
+    # Menggunakan rotasi player_client agar yt-dlp aman dari blokir bot tanpa cookies
+    clients = ['android', 'web', 'mweb', 'ios']
+    stream_url = None
+
+    for client in clients:
+        ydl_opts = {
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',
+            'quiet': True,
+            'noplaylist': True,
+            'extractor_args': {
+                'youtube': {
+                    'player_client': [client]
+                }
             }
         }
-    }
-    
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
-            formats = info.get('formats', [])
-            
-            audio_formats = [
-                f for f in formats 
-                if f.get('vcodec') == 'none' and f.get('url')
-            ]
-            
-            if not audio_formats:
-                return jsonify({"error": "Format audio tidak ditemukan"}), 500
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+                formats = info.get('formats', [])
+                audio_formats = [f for f in formats if f.get('vcodec') == 'none' and f.get('url')]
                 
-            audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
-            stream_url = audio_formats[0]['url']
+                if audio_formats:
+                    audio_formats.sort(key=lambda x: 1 if x.get('ext') == 'm4a' else 0, reverse=True)
+                    stream_url = audio_formats[0]['url']
+                    break
+        except Exception as e:
+            continue
 
+    if not stream_url:
+        return jsonify({"error": "Gagal mendapatkan stream audio dari YouTube"}), 500
+
+    try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
         }
@@ -111,7 +106,6 @@ def get_stream(video_id):
             direct_passthrough=True,
         )
     except Exception as e:
-        print(f"Stream error: {e}")
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
