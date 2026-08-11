@@ -8,7 +8,15 @@ import time
 import traceback
 
 app = Flask(__name__)
-CORS(app)
+# Konfigurasi CORS menyeluruh untuk semua origin dan method
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization,Range"
+    response.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
+    return response
 
 _yt = YTMusic()
 _cache = {}
@@ -30,8 +38,11 @@ def cached(key, fn):
     _cache[key] = (now, result)
     return result
 
-@app.route('/api/search', methods=['GET'])
+@app.route('/api/search', methods=['GET', 'OPTIONS'])
 def search_song():
+    if request.method == 'OPTIONS':
+        return '', 200
+        
     query = request.args.get('q', '').strip()
     if not query:
         return jsonify({'results': []}), 200
@@ -43,7 +54,7 @@ def search_song():
         )
         
         results = []
-        for entry in search_results:
+        for entry in search_rules := search_results:
             vid_id = entry.get('videoId')
             if not vid_id:
                 continue
@@ -70,11 +81,13 @@ def search_song():
         print(f"API Search Error: {e}")
         return jsonify({'results': []}), 200
 
-@app.route("/api/stream/<video_id>", methods=['GET'])
+@app.route("/api/stream/<video_id>", methods=['GET', 'OPTIONS'])
 def get_stream(video_id):
+    if request.method == 'OPTIONS':
+        return '', 200
+        
     stream_url = None
     
-    # 1. Coba ambil dari Piped API terlebih dahulu
     for instance in PIPED_INSTANCES:
         try:
             res = requests.get(f"{instance}/streams/{video_id}", timeout=4)
@@ -89,7 +102,6 @@ def get_stream(video_id):
         except Exception:
             continue
 
-    # 2. Jika Piped gagal, gunakan yt-dlp dengan client Android/Web sebagai cadangan
     if not stream_url:
         clients = ['android', 'web']
         for client in clients:
@@ -130,9 +142,6 @@ def get_stream(video_id):
 
         if "Content-Type" not in response_headers or response_headers["Content-Type"] == "application/octet-stream":
             response_headers["Content-Type"] = "audio/mp4"
-
-        response_headers["Access-Control-Allow-Origin"] = "*"
-        response_headers["Cache-Control"] = "no-cache"
 
         return Response(
             r.iter_content(chunk_size=1024 * 64),
